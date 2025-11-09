@@ -1,0 +1,297 @@
+---
+title: "Generate Figure 2"
+output: html_notebook
+---
+
+
+## Setup
+
+```{r}
+
+# --- libraries
+library(phytools)        # pylogenetic analysis
+library(plyr)            # organise dataset
+library(yarrr)           # transparent color
+library(viridis)         # color palettes
+library(predictFishRMR)
+
+```
+
+Load objects
+
+```{r}
+load("pars.rda")
+load("kpars.rda")
+load("rmr_data.rda")
+```
+
+
+## Figure 2
+
+
+Figure 2
+Scaling of energy demand and heat balance limits in large-bodied fishes. (A) Routine metabolic rate RMR is 7-8 fold higher for mesotherms than ectotherms, and fluctuates widely for the mesotherms as body temperature varies. Plotted are RMR estimates for fish swimming in water ranging from 20-25°C, with body temperature estimated based on equation 10. (B) The empirically derived gigantothermy phenomenon in fish shows how bigger fish – particularly mesotherms – have elevated body temperature due to a scaling mismatch between heat production and loss. Shown is estimated Ta when Tm (body temperature) is 20°C. (C & D) Theoretical heat balance thresholds (Ta) arise from an inability of larger fish to balance heat production and loss in warm water. As fish mass increases, there is a threshold water temperature in which heat produced by metabolism will be balanced by heat loss to the water (y axis); above those Ta the fish will continue to heat unless they reduce heat production (e.g. swim slower), increase heat loss by adjusting convective cooling, or both. Larger fish have lower threshold temperatures, especially mesotherms given higher rates of heat production, theoretically restricting them to cooler climates unless they engage physiological or behavioural adjustments. Dashed line represents xy unity.
+
+
+```{r}
+
+n = 100
+m = size_range = seq(1,2000, length = n)
+
+
+## A meso - expected Ta and RMR
+meso <- T  # indicating whether it is mesothermic (TRUE) or ectothermic (FALSE)
+RMR_meso_20 <- RMRfun(size_range, Tm = 20, meso = T, pars)
+RMR_meso_25 <- RMRfun(size_range, Tm = 25, meso = T, pars)
+
+## A endo - expected Ta and RMR
+meso <- F  
+RMR_ecto_20 <- RMRfun(size_range, Tm = 20, meso = F, pars)
+RMR_ecto_25 <- RMRfun(size_range, Tm = 25, meso = F, pars)
+
+# function for ploting
+grad_ribbon_iso <- function(x, y_low, y_high,
+                            n_levels = 200,
+                            col_low = "red", col_high = "blue",
+                            alpha = 0.9, border = NA) {
+  stopifnot(length(x) == length(y_low), length(x) == length(y_high))
+  dif <- y_high - y_low
+  pal <- grDevices::adjustcolor(
+    colorRampPalette(c(col_low, col_high))(n_levels),
+    alpha.f = alpha
+  )
+  for (i in 1:n_levels) {
+    t0 <- (i - 1) / n_levels
+    t1 <- i / n_levels
+    y0 <- y_low + t0 * dif   # curva intermedia inferior
+    y1 <- y_low + t1 * dif   # curva intermedia superior
+    # salta segmentos con NAs
+    if (any(is.na(c(x, y0, y1)))) next
+    polygon(c(x, rev(x)), c(y0, rev(y1)), col = pal[i], border = border)
+  }
+}
+
+# --- plot
+
+# Panel A
+# quartz("Fig2", 10,8)
+pdf(file = "Figure-2.pdf", 10, 8)
+
+layout(matrix(c(1,3,0,0,2,4,0,5,0,0), 2), widths = c(1,0.4,1,0.4, 0.2))
+par(oma = c(2,5,2,1), mar = c(3.5,0,3.5,0), cex.axis = 1.2)
+
+m <- size_range
+plot(m, RMR_meso_20/1000, type = "n", ylim = c(0,300), 
+     xlim = c(0,2000), las = 1, ylab = "", xlab = "", 
+     col = "red", xaxs = "i", yaxs = "i", xaxt = "n")
+axis(1, at = c(1,500,1000,2000), 
+     labels = c("1 Kg", "500 Kg", "1Ton", "2 Ton"))
+mtext(side = 2, line = 3, 
+      expression("Routine metabolic rate (g O"[2]*" h"^-1*" )"))
+mtext(side = 1, line = -29, 
+      expression("Body mass"), outer = T, adj = 0.39)
+
+grad_ribbon_iso(m, RMR_meso_20/1000, RMR_meso_25/1000,
+                n_levels = 250, col_low = "#0571B0", 
+                col_high = "#D7301F", alpha = 0.95)
+lines(m, RMR_meso_20/1000, col = "#0571B0")
+lines(m, RMR_meso_25/1000, col = "#D7301F")
+
+grad_ribbon_iso(m, RMR_ecto_20/1000, RMR_ecto_25/1000,
+                n_levels = 250, col_low ="#0571B0", 
+                col_high = "#D7301F", alpha = 0.95)
+lines(m, RMR_ecto_20/1000, col = "#0571B0")
+lines(m, RMR_ecto_25/1000, col = "#D7301F")
+text(2800, 310, expression("20"*degree*"C"))
+text(2800, 660, expression("25"*degree*"C"))
+
+box()
+
+# --- Leyenda de gradiente (arriba izquierda) ---
+usr <- par("usr")
+
+x_left   <- usr[1] + 0.06*(usr[2]-usr[1])
+x_right  <- x_left + 0.035*(usr[2]-usr[1])
+y_top    <- usr[4] - 0.06*(usr[4]-usr[3])
+y_bottom <- y_top - 0.28*(usr[4]-usr[3])
+
+# Secuencias de bordes (x tiene 2, y muchos)
+x_seq <- c(x_left, x_right)
+y_seq <- seq(y_bottom, y_top, length.out = 251)
+
+# z debe ser (length(x)-1) x (length(y)-1) = 1 x 250
+z <- matrix(seq(0, 1, length.out = 250), nrow = 1)
+
+# Colores: mismo orden que en tus polígonos (low azul -> high rojo)
+pal <- colorRampPalette(c("#0571B0", "#D7301F"))(250)
+
+image(x = x_seq, y = y_seq, z = z, col = pal, add = TRUE)
+rect(x_left, y_bottom, x_right, y_top, border = "black")
+
+# Etiquetas
+# 20C label for color-ramp
+text(x_right + 0.01*(usr[2]-usr[1]), y_bottom, 
+     expression("20"*degree*"C"), adj = 0) 
+# 25C label for color-ramp
+text(x_right + 0.01*(usr[2]-usr[1]), y_top,    
+     expression("25"*degree*"C"), adj = 0)
+# Tm main title for color-ramp
+text((x_right + x_left)/2, y_top + 8,    
+     expression(italic(T)["m"]), adj = 0.5)
+
+
+#text(1200, 220, "Mesotherms", cex = 1.2)
+#text(1600, 110, "Ectotherms", cex = 1.2)
+
+# Panel B
+
+
+
+# Define body temperature
+Tm = 20
+
+meso <- TRUE  # indicating the fish is ectothermic (FALSE)
+elevation_values <- T0fun(size_range, Tm,meso = meso, pars = pars) / 
+  kfun(m = size_range, kpars = kpars)
+
+plot(size_range, elevation_values, type = "l", 
+     col = "black", yaxs = "i", las = 1, 
+     xlim = c(0,2000), ylim = c(0,8), xaxs = "i", ylab = "", 
+     xaxt = "n", xlab = "", lwd = 1.5)
+axis(1, at = c(1,500,1000,2000), 
+     labels = c("1 Kg", "500 Kg", "1Ton", "2 Ton"))
+
+meso <- FALSE  # indicating the fish is ectothermic (FALSE)
+elevation_values <- T0fun(size_range, Tm,meso = meso, pars = pars) / 
+  kfun(m = size_range, kpars = kpars)
+
+lines(size_range, elevation_values, type = "l", 
+      col = "black", lwd = 1.5, lty = 2)
+mtext(side = 2, line = 3, 
+      expression("Elevation of " *italic(T)["m"]* " above " *italic(T)["a"]* " ("*degree*"C)"))
+
+# Panel C 
+# Initialize a vector to store the Ta values
+Tm <- seq(0, 50, by = 0.5)
+Ta <- numeric(length(Tm))
+m = seq(1,2000, length = 2500)
+
+# Calculate Ta for each Tm value
+meso = F
+col <- (plasma(length(m)))
+
+plot(Tm, Tm, xlim = c(0,45), ylim = c(0,45), 
+     type = "n", xaxs = "i", yaxs = "i", xlab = "", ylab = "", las = 1)
+for(i in 1:length(m)) {
+  lines(Tm, Tafun(m[i], Tm, meso, pars), col = col[i])
+}
+abline(0,1, lty = 2)
+mtext(
+  side = 2, line = 3,
+  expression("Heat balanced " * italic(T)["a"] * " (" * degree * "C)")
+)
+box()
+
+polygon(c(c(19,50), c(39,22.5)), c(c(9.5,36), c(-100, -100)), 
+        col = "white", border = F)
+box()
+
+par(new = T, mar = c(18,4,4,12))
+plot(1,1, xlim = c(0,2000), ylim = c(0,45), 
+     type = "n", axes = F, xlab = "", ylab = "")
+
+axis(1, at = c(1, 500, 1000, 2000), 
+     labels = c("1Kg", "500", "1Ton", "2 Ton"), cex.axis = 1)
+axis(2, at = c(0,10,20,30,40,60), las = 1)
+mtext(
+  side = 2,
+  expression(italic(T)[thres] ~ "(" * degree * "C" * ")"),
+  line = 2.2,
+  cex = 0.8
+)
+mtext(side = 1, "Body mass", line = 2.2, cex = 0.8)
+
+m_range <- seq(50, 2000, length.out = 2000)
+
+Ta_crit_meso <- maxAmbientTemp(m_range, meso = TRUE, pars)
+Ta_crit_ecto <- maxAmbientTemp(m_range, meso = FALSE, pars)
+
+dd_crit <- data.frame(
+  mass = c(m_range, m_range), 
+  Ta_crit = c(Ta_crit_meso, Ta_crit_ecto), 
+  type = c(rep("meso", length(m_range)), rep("ecto", length(m_range)))
+)
+
+lines(dd_crit[dd_crit$type == "ecto",]$mass, 
+      dd_crit[dd_crit$type == "ecto",]$Ta_crit, 
+      lwd = 1.5, cex = 0.8, col = "black")
+
+par(mar = c(3.5,0,3.5,0))
+
+# Calculate Ta for each Tm value
+meso = T
+plot(Tm, Tm, xlim = c(1,45), ylim = c(1,45), 
+     type = "n", xaxs = "i", yaxs = "i", xlab = "", ylab = "", las = 1)
+for(i in 1:length(m)) {
+  lines(Tm, Tafun(m[i], Tm, meso, pars), col = col[i])
+}
+abline(0,1, lty = 2)
+mtext(
+  side = 1, line = 0, outer = TRUE, adj = 0.4,
+  expression("Body temperature " * italic(T)["m"] * " (" * degree * "C)")
+)
+
+polygon(c(c(19,50), c(39,22.5)), c(c(9.5,33), c(-100, -100)), 
+        col = "white", border = F)
+box()
+mtext(
+  side = 2, line = 3,
+  expression("Heat balanced " * italic(T)["a"] * " (" * degree * "C)")
+)
+
+
+par(new = T, mar = c(18,4,4,12))
+
+plot(1,1, xlim = c(0,2000), ylim = c(0,45), 
+     type = "n", axes = F, xlab = "", ylab = "")
+axis(1, at = c(1, 500, 1000, 2000), 
+     labels = c("1 Kg", "500 Kg", "1Ton", "2 Ton"), cex.axis = 1)
+axis(2, at = c(0,10,20,30,40,60), las = 1)
+mtext(
+  side = 2,
+  expression(italic(T)[thres] ~ "(" * degree * "C" * ")"),
+  line = 2.2,
+  cex = 0.8
+)
+mtext(side = 1, "Body mass", line = 2.2, cex = 0.8)
+
+m_range <- seq(50, 2000, length.out = 2000)
+
+dd_crit_meso <- dd_crit[dd_crit$type == "meso",]
+n <- nrow(dd_crit_meso)
+idx <- round(seq(1, n, length.out = 15))
+dd_subset <- dd_crit_meso[idx, ]
+
+lines(dd_subset[dd_subset$type == "meso",]$mass, 
+      dd_subset[dd_subset$type == "meso",]$Ta_crit, 
+      lwd = 1.5, cex = 0.8, col = "black", lty = 2)
+
+par(mar = c(5,1,5,6))
+
+library(plotrix)
+
+plot(NA, NA, ylim = c(1,2000), xlim = c(0,1), 
+     xaxt = "n", yaxt = "n", ylab = "", xlab = "", xaxs = "i")
+axis(4, at = c(1, 500, 1000, 2000), 
+     labels = c("1 Kg", "500 Kg", "1Ton", "2 Ton"), las = 1)
+
+gradient.rect(0, -85, 1, 2085, 
+              col = plasma(length(m)), border = NA, gradient = "y")
+box()
+mtext(side = 4, "Body mass", line = 4)
+
+segments(21,10,35,20)
+
+# close the device to generate the pdf
+dev.off()
+```

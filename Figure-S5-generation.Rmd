@@ -1,0 +1,253 @@
+---
+title: "Generate Supplementary Figure"
+output: html_notebook
+---
+
+
+## Setup
+
+```{r}
+
+# --- libraries
+library(phytools)        # pylogenetic analysis
+library(plyr)            # organise dataset
+library(yarrr)           # transparent color
+library(viridis)         # color palettes
+library(raster)          # plot maps
+library(sp)
+library(maps)            # plot maps
+library(predictFishRMR)
+```
+
+Load objects
+
+```{r}
+load("pars.rda")
+load("kpars.rda")
+load("rmr_data.rda")
+```
+
+## Figure S5
+
+Figure S5. Energy landscape and theoretical heat balance thresholds for current and future large-bodied fishes. Routine metabolic rate increases with water temperature and body size, and is higher for mesothermic fishes. In all panels RMR is estimated for current and future Sea Surface Temperature scenarios for a model 1 ton ectotherm and 300 kg mesotherm via equations 10 and 5, with white regions indicating SSTs that exceed the theoretical thresholds beyond which those fish cannot balance heat production and loss unless engaging behavioural (e.g. diving to cooler depths as seen in salmon sharks; 33) or physiological mechanisms (such as swimming more slowly or altering blood circulation patterns, as seen in bluefin tuna; 39). These heat-balance dynamics could help explain why large fishes migrate seasonally (winter vs summer panels); why contemporary mesotherms are distributed toward higher latitudes than ectotherms (top vs bottom panels); and could help predict range shifts for large fishes under future ocean warming (“Today” vs “2080-2100” SST scenarios). Scenario SSP4-6.0 was used to generate future warming scenarios, with winter and summer reflecting minimum and maximum annual SST estimates.
+
+In order to estimate body temperature over a raster (matrix) of temperatures we need to define a modified version of `predictFishRMR::bodyTempLambert`.
+
+```{r}
+
+bodyTempLambertRaster <-
+function(x, m, k = NULL, kpars = NULL,meso, pars){
+  
+  # calculate the cooling rate k from allometric relationship with mass if not
+  # provided. The coefficients used to estimate k from kfum() can be 
+  # set using values provided to kpars, else the default values are used. 
+  ifelse(is.null(k), 
+               ifelse(is.null(kpars), 
+                      kk <- kfun(m), 
+                      kk <- kfun(m, kpars)), 
+               kk <- k)
+  
+  # extract the parameters to pass onwards
+  gg <- pars[1] # gamma, the intercept
+  aa <- pars[2] # alpha, the coefficient of log10(mass) in RMR
+  bb <- pars[3] # beta, the coefficient of body temperature
+  ifelse(meso, pp <- pars[4],  pp <- 0) # psi, the effect of mesothermy on the intercept
+  # om <- pars[5] # omega, the exponent of the multiplier of mass to convert RMR to T0
+  
+  om <- predictFishRMR:::omega
+  
+  # we only need branch 0 from the Lambert function
+  y0 <- x - 
+    (lamW::lambertW0( - ((exp(bb*x+gg+pp)) * (m^(aa-1)) * bb / (om*kk) )) / bb)
+
+
+  # return the data
+  return(y0)
+}
+
+
+```
+
+
+
+Generate the maps of RMR valus derived from water temperatures under different scenarios. 
+
+Here we define a function to generate each map which we can call for fish with different traits and for different climate scenarios.
+
+```{r}
+mapFunRMR <- function(m, world_ta, meso, pars, kpars, 
+                      title = "", z_limits = NULL, 
+                      ax_1_lab = T, ax_2_lab = T, 
+                      x_lab = "", y_lab = ""){
+  
+  # defaults in prior code from nacho had
+  # z_limits =c(1500, 89469.57)
+  
+  # find the max ambient temp the fish can sustain
+  x_max <- maxAmbientTemp(m, meso, pars)
+  
+  # truncate teh world map to temp below this threshold
+  values(world_ta) <- ifelse(values(world_ta)>x_max, NA, values(world_ta) )
+  Ta <- Tm <- world_ta
+  
+  # calculate Tm values from the given raster file of Ta values
+  values(Tm) <- bodyTempLambertRaster(x = values(Ta), m = m, meso = meso, 
+                                      pars = pars, kpars = kpars)
+  
+  # convert Tm to RMR
+  RMR_values <- RMRfun(m, Tm, meso, pars)
+  
+  # plot RMR and world map
+  plot(NA,NA, xlim = c(-160,160), ylim = c(-75,75), 
+       las = 1, xaxt = "n", yaxt = "n", ylab = y_lab, xlab = x_lab)
+  image((RMR_values), zlim = z_limits, col = magma(50), add = T)
+  map("world", fill=TRUE, col="grey", add=TRUE, lwd=0.5)
+  mtext(line = 1, title, cex = 1.5)
+  axis(2, las = 1, labels = ax_2_lab)
+  axis(1, las = 1, labels = ax_1_lab)
+  box()
+  
+}
+```
+
+
+```{r}
+
+# quartz("Fig3", 24,8)
+
+# open a pdf file container into which we will draw our figure.
+pdf(file = "SM-maps.pdf", 24, 12)
+
+# define the layout of the multipanel figure
+layout(matrix(c(1,2,3,4,5,6,7,8,9, 10, 10, 10),3), widths = c(1, 1, 1, 0.25))
+par(oma = c(4,5,5,1), mar = c(2,2,2,2), cex.axis = 1)
+
+# set the limits for the colour-ramp for the RMR data
+z_limits = c(665.427, 226238)
+
+# three fully empty plots to fill the first column where the silhouettes
+# will go in post-processing
+plot(0, xaxt = 'n', yaxt = 'n', bty = 'n', pch = '', ylab = '', xlab = '')
+plot(0, xaxt = 'n', yaxt = 'n', bty = 'n', pch = '', ylab = '', xlab = '')
+plot(0, xaxt = 'n', yaxt = 'n', bty = 'n', pch = '', ylab = '', xlab = '')
+
+# panel [1,1]
+# 100kg ectotherm today winter
+mapFunRMR(m = 100, world_ta = raster("today_min.nc"), 
+          meso = T, pars = pars, kpars = kpars, 
+          title = "Winter", z_limits = z_limits, 
+          ax_1_lab = F, ax_2_lab = T)
+
+# panel [2,1]
+# 250kg mesotherm today winter
+mapFunRMR(m = 250, world_ta = raster("today_min.nc"), 
+          meso = T, pars = pars, kpars = kpars, 
+          z_limits = z_limits, 
+          ax_1_lab = F, ax_2_lab = T)
+
+# panel [3,1]
+# 500 mesotherm today winter
+mapFunRMR(m = 500, world_ta = raster("today_min.nc"), 
+          meso = T, pars = pars, kpars = kpars, 
+          title = "", z_limits = z_limits, 
+          ax_1_lab = T, ax_2_lab = T)
+
+# panel [1,2]
+# 100kg ectotherm today winter
+mapFunRMR(m = 100, world_ta = raster("today_max.nc"), 
+          meso = T, pars = pars, kpars = kpars, 
+          title = "Summer", z_limits = z_limits, 
+          ax_1_lab = F, ax_2_lab = F)
+
+# panel [2,2]
+# 250kg mesotherm today winter
+mapFunRMR(m = 250, world_ta = raster("today_max.nc"), 
+          meso = T, pars = pars, kpars = kpars, 
+          z_limits = z_limits, 
+          ax_1_lab = F, ax_2_lab = F)
+
+# panel [3,2]
+# 500 mesotherm today winter
+mapFunRMR(m = 500, world_ta = raster("today_max.nc"), 
+          meso = T, pars = pars, kpars = kpars, 
+          title = "", z_limits = z_limits, 
+          ax_1_lab = T, ax_2_lab = F)
+
+# Scale
+par(mar = c(8,1,8,6))
+library(plotrix)
+plot(NA, NA, ylim = z_limits, xlim = c(0,1), 
+     xaxt = "n", yaxt = "n", ylab = "", 
+     xlab = "", xaxs = "i",yaxs = "i")
+axis(4, las = 1, at = seq(10, 230, 40)*1000, 
+     labels = seq(10, 230, 40), cex.lab = 0.7)
+gradient.rect(0, z_limits[1], 1, z_limits[2], 
+              col= magma(50),border=NA, gradient="y")
+box()
+
+# Add the text labels for axes
+mtext(side = 4, 
+      expression("Routine metabolic rate (g O"[2]*" h"^-1*" )"), 
+      line = 5.5, cex = 1.1)
+mtext(side = 1, outer = T, 
+      expression("Longitude ("*degree*")"), 
+      line = 3, adj = 0.46, cex = 1.1, at = 0.61)
+mtext(side = 2, outer = T, 
+      expression("Latitude ("*degree*")"), 
+      line = -53, adj = 0.475, cex = 1.1, at = 0.52)
+
+
+# close device to generate pdf
+dev.off()
+```
+
+An optional test plot to play around with locating the axes labels which replicates the setup above but without requiring the computational load of rendering the maps. 
+
+```{r, eval = FALSE}
+
+pdf(file = "test.pdf", 24, 8)
+layout(matrix(c(1,2,3,4,5,6,7,8,9, 10, 10, 10),3), widths = c(1, 1, 1, 0.25))
+par(oma = c(4,5,5,1), mar = c(2,2,2,2), cex.axis = 1)
+
+# nine basic plots
+plot(0)
+plot(0)
+plot(0)
+
+plot(0)
+plot(0)
+plot(0)
+
+plot(0)
+plot(0)
+plot(0)
+
+
+# Scale
+par(mar = c(8,1,8,6))
+library(plotrix)
+plot(NA, NA, ylim = z_limits, xlim = c(0,1), 
+     xaxt = "n", yaxt = "n", ylab = "", 
+     xlab = "", xaxs = "i",yaxs = "i")
+axis(4, las = 1, at = seq(10, 230, 40)*1000, 
+     labels = seq(10, 230, 40), cex.lab = 0.7)
+gradient.rect(0, z_limits[1], 1, z_limits[2], 
+              col= magma(50),border=NA, gradient="y")
+box()
+
+# Add the text labels for axes
+mtext(side = 4, 
+      expression("Routine metabolic rate (g O"[2]*" h"^-1*" )"), 
+      line = 5.5, cex = 1.1)
+mtext(side = 1, outer = T, 
+      expression("Longitude ("*degree*")"), 
+      line = 3, adj = 0.46, cex = 1.1, at = 0.61)
+mtext(side = 2, outer = T, 
+      expression("Latitude ("*degree*")"), 
+      line = -53, adj = 0.475, cex = 1.1, at = 0.52)
+
+dev.off()
+```
+
+
+
